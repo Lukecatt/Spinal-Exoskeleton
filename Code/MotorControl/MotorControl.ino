@@ -1,5 +1,9 @@
 unsigned char sendData[17];
 unsigned char rcvData[16];
+float tCur, spdCur, posCur;
+char temp, error;
+uint16_t forceCur;
+
 
 uint16_t const crc_ccitt_table[256] = {
 	0x0000, 0x1189, 0x2312, 0x329b, 0x4624, 0x57ad, 0x6536, 0x74bf,
@@ -97,20 +101,62 @@ void createSend(unsigned char *data, unsigned char mode, float t, float spd, flo
 }
 
 void send(unsigned char mode, float t, float spd, float pos, float kp, float kspd) {
-  createSend(sendData, 1, t, spd, pos, kp, kspd);
-  Serial.write(sendData, 17);
+  digitalWrite(14, HIGH);
+  createSend(sendData, mode, t, spd, pos, kp, kspd);
+  Serial1.write(sendData, 17);
   ets_delay_us(43); // baud rate 4000000 => 1/4000000=2.5*10^-10 = 250ns; 250ns * 10 bits/byte * 17 byte = 42.5 microseconds, approx. 43
 }
 
+bool rcv() {
+  digitalWrite(14, LOW);
+  if (Serial1.available() >= 16) {
+    Serial1.readBytes(rcvData, 16);
+    if (rcvData[0] != 0xFD || rcvData[1] != 0xEE) {
+    return false;
+    }
+    uint16_t crc = crc_ccitt(0, rcvData, 14);
+    uint16_t crcRcv = (rcvData[15] << 8) + rcvData[14];
+    if (crc != crcRcv) {
+      return false;
+    }
+    tCur = ((rcvData[4] << 8) + rcvData[3]) / 256;
+    spdCur = ((rcvData[6] << 8) + rcvData[5]) / 256 * (2 * 3.1415926);
+    posCur = ((rcvData[10] << 24) + (rcvData[9] << 16) + (rcvData[8] << 8) + rcvData[7]) / 32768 * (2 * 3.1415926);
+    temp = rcvData[11];
+    error = rcvData[12] & 0b111;
+    rcvData[12] = rcvData[12] >> 3;
+    forceCur = rcvData[13] & 0b1111111 << 5 + rcvData[12];
+  }
+  return true;
+}
 
 void setup() {
   // put your setup code here, to run once:
+  Serial.begin(9600);
   Serial1.begin(4000000);
-  pinMode(14, OUTPUT);
+  pinMode(14, OUTPUT); // turn on output pin to transfer data to motor
   digitalWrite(14, HIGH);
+  pinMode(11, OUTPUT); // turn on light to indicate ESP32 is running
+  digitalWrite(11, HIGH);
+  
 }
 
 void loop() {
-  send(1, 0, 40, 0, 0, 0.02);
+  send(0, 0, 40, 0, 0, 0.02);
+  rcv();
+  if (rcv()) {
+    Serial.print(tCur);
+    Serial.print(" ");
+    Serial.print(spdCur);
+    Serial.print(" ");
+    Serial.print(posCur);
+    Serial.print(" ");
+    Serial.print(temp);
+    Serial.print(" ");
+    Serial.print(error);
+    Serial.println(" ");
+  } else {
+    Serial.println("crc wrong");
+  }
   delay(1000);
 }
