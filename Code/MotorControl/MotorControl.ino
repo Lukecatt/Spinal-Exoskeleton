@@ -132,7 +132,7 @@ bool rcv() {
 
 void setup() {
   // put your setup code here, to run once:
-  Serial.begin(9600);
+  // Serial.begin(9600);
   Serial1.begin(4000000);
   pinMode(14, OUTPUT); // turn on output pin to transfer data to motor
   digitalWrite(14, HIGH);
@@ -142,21 +142,7 @@ void setup() {
 }
 
 void loop() {
-  send(0, 0, 40, 0, 0, 0.02);
+  send(1, 1.0, 0, 0, 0, 0);
   rcv();
-  if (rcv()) {
-    Serial.print(tCur);
-    Serial.print(" ");
-    Serial.print(spdCur);
-    Serial.print(" ");
-    Serial.print(posCur);
-    Serial.print(" ");
-    Serial.print(temp);
-    Serial.print(" ");
-    Serial.print(error);
-    Serial.println(" ");
-  } else {
-    Serial.println("crc wrong");
-  }
-  delay(1000);
+  delay(500);
 }
