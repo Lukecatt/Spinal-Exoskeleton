@@ -107,6 +107,7 @@ void send(unsigned char mode, float t, float spd, float pos, float kp, float ksp
   ets_delay_us(43); // baud rate 4000000 => 1/4000000=2.5*10^-10 = 250ns; 250ns * 10 bits/byte * 17 byte = 42.5 microseconds, approx. 43
 }
 
+int32_t tmp;
 bool rcv() {
   digitalWrite(14, LOW);
   if (Serial1.available() >= 16) {
@@ -119,9 +120,22 @@ bool rcv() {
     if (crc != crcRcv) {
       return false;
     }
-    tCur = ((rcvData[4] << 8) + rcvData[3]) / 256;
-    spdCur = ((rcvData[6] << 8) + rcvData[5]) / 256 * (2 * 3.1415926);
-    posCur = ((rcvData[10] << 24) + (rcvData[9] << 16) + (rcvData[8] << 8) + rcvData[7]) / 32768 * (2 * 3.1415926);
+    // Serial.write(rcvData, 16);
+    tmp = rcvData[4];
+    tmp = (tmp << 8) + rcvData[3];
+    tCur = (float)tmp / 256.0;
+
+    tmp = rcvData[6];
+    tmp = (tmp << 8) + rcvData[5];
+    spdCur = ((float)tmp / 256.0) * 60.0; // rpm
+
+    tmp = rcvData[10];
+    tmp = tmp << 24;
+    int32_t tmp2 = rcvData[9];
+    tmp2 = tmp2 << 16;
+    int16_t tmp3 = rcvData[8];
+    tmp3 = tmp3 << 8;
+    posCur = (float)(tmp + tmp2 + tmp3 + rcvData[7]) / 32768.0 * (2 * 3.1415);
     temp = rcvData[11];
     error = rcvData[12] & 0b111;
     rcvData[12] = rcvData[12] >> 3;
@@ -142,8 +156,11 @@ void setup() {
 }
 
 void loop() {
-  send(1, 0.8, 0, 0, 0, 0);
-  rcv();
-  Serial.println(posCur);
-  delay(200);
+  send(1, 0.25, 0, 0, 0, 0.01);
+  if (rcv()) {
+    Serial.print(posCur);
+    Serial.print(",");
+    Serial.println(tCur);
+  }
+  delay(100);
 }
