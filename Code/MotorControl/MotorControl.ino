@@ -59,7 +59,7 @@ uint16_t crc_ccitt(uint16_t crc, uint8_t const *buffer, size_t len)
 }
 
 void createSend(unsigned char *data, unsigned char mode, float t, float spd, float pos, float kp, float kspd) {
-  uint32_t m;
+  int32_t m;
   unsigned char *ptr;
   data[0] = 0xFE;
   data[1] = 0xEE;
@@ -132,7 +132,7 @@ bool rcv() {
 
 void setup() {
   // put your setup code here, to run once:
-  // Serial.begin(9600);
+  Serial.begin(115200);
   Serial1.begin(4000000);
   pinMode(14, OUTPUT); // turn on output pin to transfer data to motor
   digitalWrite(14, HIGH);
@@ -142,7 +142,8 @@ void setup() {
 }
 
 void loop() {
-  send(1, 1.0, 0, 0, 0, 0);
+  send(1, 0.8, 0, 0, 0, 0);
   rcv();
-  delay(500);
+  Serial.println(posCur);
+  delay(200);
 }
