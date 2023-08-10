@@ -3,6 +3,9 @@ unsigned char rcvData[16];
 float tCur, spdCur, posCur;
 char temp, error;
 uint16_t forceCur;
+const float normalTorque = 0.15; // torque that the motor exerts on default
+const float liftTorque = 0.4; // torque that the motor exerts when user is bending back up
+float posUpright;
 
 
 uint16_t const crc_ccitt_table[256] = {
@@ -135,7 +138,10 @@ bool rcv() {
     tmp2 = tmp2 << 16;
     int16_t tmp3 = rcvData[8];
     tmp3 = tmp3 << 8;
-    posCur = (float)(tmp + tmp2 + tmp3 + rcvData[7]) / 32768.0 * (2 * 3.1415);
+    posCur = (float)(tmp + tmp2 + tmp3 + rcvData[7]) / 32768.0;
+    posCur *= 6.2829;
+    posCur += 50;
+
     temp = rcvData[11];
     error = rcvData[12] & 0b111;
     rcvData[12] = rcvData[12] >> 3;
@@ -152,15 +158,46 @@ void setup() {
   digitalWrite(14, HIGH);
   pinMode(11, OUTPUT); // turn on light to indicate ESP32 is running
   digitalWrite(11, HIGH);
-  
+  float sum = 0;
+  send(1, normalTorque, 0, 0, 0, 0); // initialize motor
+  delay(1000); // wait for motor to move to its position
+  for (int i=0; i<5; i++) {
+    send(1, normalTorque, 0, 0, 0, 0); // calculate average position
+    rcv();
+    sum += posCur;
+    delay(50);
+  }
+  posUpright = sum / 5; // position of motor when user is upright
+
 }
 
+bool lock = false;
+float posPrev1 = 10000, posPrev2 = 10000;
+float tSend = 0.2;
+unsigned char cnt = 0;
 void loop() {
-  send(1, 0.25, 0, 0, 0, 0.01);
-  if (rcv()) {
-    Serial.print(posCur);
-    Serial.print(",");
-    Serial.println(tCur);
+  Serial.print(posCur);
+  Serial.print(",");
+  Serial.print(posUpright);
+  Serial.print(",");
+  Serial.println(tSend);
+  if (!lock) {  // prevents motor from changing its torque too often when it is pulling the user upright
+    if (posPrev1 < posCur-5 && posPrev2 < posCur-10 && posCur < posUpright - 2) { // position of motor must be upwards trend and not close to posUpright (not when the user is close to upright)
+      lock = true;
+      tSend = liftTorque;
+    } else {
+      tSend = normalTorque;
+    }
+  } else { // delay 50 ms * 10 = 500ms lock time
+    cnt ++;
+    if (cnt == 10) {
+      lock = false;
+      cnt = 0;
+    }
   }
-  delay(100);
+  posPrev2 = posPrev1;
+  posPrev1 = posCur;
+  send(1, tSend, 0, 0, 0, 0);
+  rcv();
+  delay(50);
 }
