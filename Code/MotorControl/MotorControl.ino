@@ -1,11 +1,18 @@
-unsigned char sendData[17];
-unsigned char rcvData[16];
-float tCur, spdCur, posCur;
-char temp, error;
-uint16_t forceCur;
-const float normalTorque = 0.15; // torque that the motor exerts on default
-const float liftTorque = 0.4; // torque that the motor exerts when user is bending back up
-float posUpright;
+unsigned char motorTXData[17];
+unsigned char gyroRXData[10];
+const float normalTorque = 0.3; // torque that the motor exerts on default
+const float liftTorque = 1.5; // torque that the motor exerts when user is bending back up
+bool start = false;
+float xAcc, yAcc, zAcc; // angular acceleration on axes x, y, and z;
+float xAng, yAng, zAng; // angle of x, y and z axes
+// float xAccBias, yAccBias, zAccBias = 0.0;
+// float xAngBias, yAngBias, zAngBias = 0.0;
+float xAccBias = 0.0;
+float yAccBias = 0.0;
+float zAccBias = 0.0;
+float xAngBias = 0.0;
+float yAngBias = 0.0;
+float zAngBias = 0.0;
 
 
 uint16_t const crc_ccitt_table[256] = {
@@ -103,101 +110,111 @@ void createSend(unsigned char *data, unsigned char mode, float t, float spd, flo
   data[16] = ptr[1];
 }
 
-void send(unsigned char mode, float t, float spd, float pos, float kp, float kspd) {
+void motor(unsigned char mode, float t, float spd, float pos, float kp, float kspd) {
   digitalWrite(14, HIGH);
-  createSend(sendData, mode, t, spd, pos, kp, kspd);
-  Serial1.write(sendData, 17);
+  createSend(motorTXData, mode, t, spd, pos, kp, kspd);
+  Serial1.write(motorTXData, 17);
   ets_delay_us(43); // baud rate 4000000 => 1/4000000=2.5*10^-10 = 250ns; 250ns * 10 bits/byte * 17 byte = 42.5 microseconds, approx. 43
 }
 
-int32_t tmp;
-bool rcv() {
-  digitalWrite(14, LOW);
-  if (Serial1.available() >= 16) {
-    Serial1.readBytes(rcvData, 16);
-    if (rcvData[0] != 0xFD || rcvData[1] != 0xEE) {
-    return false;
+bool rcvGyro() { // rcvGyro() means x, y, z are updated; !rcvGyro() means x, y, z are not updated;
+  if (Serial2.read() == 0x55 && Serial2.available() >= 10) {
+    Serial2.readBytes(gyroRXData, 10);
+    int64_t sumcrc = 0x55;
+    for (uint8_t i=0; i<9; i++) {
+      sumcrc += gyroRXData[i];
     }
-    uint16_t crc = crc_ccitt(0, rcvData, 14);
-    uint16_t crcRcv = (rcvData[15] << 8) + rcvData[14];
-    if (crc != crcRcv) {
+    if ((sumcrc & 0b11111111) != gyroRXData[9] || gyroRXData[0] == 0x51) {
       return false;
     }
-    // Serial.write(rcvData, 16);
-    tmp = rcvData[4];
-    tmp = (tmp << 8) + rcvData[3];
-    tCur = (float)tmp / 256.0;
+    if (gyroRXData[0] == 0x52) { // angular acceleration
+      int16_t tmp = gyroRXData[2] << 8;
+      xAcc = tmp | gyroRXData[1];
+      xAcc = (float)(xAcc / 32768) * 2000;
+      xAcc -= xAccBias;
 
-    tmp = rcvData[6];
-    tmp = (tmp << 8) + rcvData[5];
-    spdCur = ((float)tmp / 256.0) * 60.0; // rpm
+      tmp = gyroRXData[4] << 8;
+      yAcc = tmp | gyroRXData[3];
+      yAcc = (float)(yAcc / 32768) * 2000;
+      yAcc -= yAccBias;
+      
+      tmp = gyroRXData[6] << 8;
+      zAcc = tmp | gyroRXData[5];
+      zAcc = (float)(zAcc / 32768) * 2000;
+      zAcc -= zAccBias;
+    } else if (gyroRXData[0] == 0x53){ // angle
+      int16_t tmp = gyroRXData[2] << 8;
+      xAng = tmp | gyroRXData[1];
+      xAng = (float)(xAng / 32768) * 180;
+      xAng -= xAngBias;
 
-    tmp = rcvData[10];
-    tmp = tmp << 24;
-    int32_t tmp2 = rcvData[9];
-    tmp2 = tmp2 << 16;
-    int16_t tmp3 = rcvData[8];
-    tmp3 = tmp3 << 8;
-    posCur = (float)(tmp + tmp2 + tmp3 + rcvData[7]) / 32768.0;
-    posCur *= 6.2829;
-    posCur += 50;
-
-    temp = rcvData[11];
-    error = rcvData[12] & 0b111;
-    rcvData[12] = rcvData[12] >> 3;
-    forceCur = rcvData[13] & 0b1111111 << 5 + rcvData[12];
+      tmp = gyroRXData[4] << 8;
+      yAng = tmp | gyroRXData[3];
+      yAng = (float)(yAng / 32768) * 180;
+      yAng -= yAngBias;
+      
+      tmp = gyroRXData[6] << 8;
+      zAng = tmp | gyroRXData[5];
+      zAng = (float)(zAng / 32768) * 180;
+      zAng -= zAngBias;
+    }
+    return true;
   }
-  return true;
+  return false;
+}
+
+void resetGyro() {
+  int cntt = 0;
+  while (cntt < 5) {
+    if (rcvGyro()) {
+      cntt++;
+    }
+  }
+  xAccBias = xAcc;
+  yAccBias = yAcc;
+  zAccBias = zAcc;
+  xAngBias = xAng;
+  yAngBias = yAng;
+  zAngBias = zAng;
 }
 
 void setup() {
   // put your setup code here, to run once:
-  Serial.begin(115200);
-  Serial1.begin(4000000);
+  Serial.begin(115200);// computer
+  Serial1.begin(4000000);// motor
+  Serial2.begin(115200, SERIAL_8N1, 10, 11);// gyroscope
   pinMode(14, OUTPUT); // turn on output pin to transfer data to motor
   digitalWrite(14, HIGH);
   pinMode(11, OUTPUT); // turn on light to indicate ESP32 is running
   digitalWrite(11, HIGH);
-  float sum = 0;
-  send(1, normalTorque, 0, 0, 0, 0); // initialize motor
-  delay(1000); // wait for motor to move to its position
-  for (int i=0; i<5; i++) {
-    send(1, normalTorque, 0, 0, 0, 0); // calculate average position
-    rcv();
-    sum += posCur;
-    delay(50);
-  }
-  posUpright = sum / 5; // position of motor when user is upright
-
+  Serial2.setRxTimeout(1);
+  resetGyro();
 }
 
-bool lock = false;
-float posPrev1 = 10000, posPrev2 = 10000;
-float tSend = 0.2;
-unsigned char cnt = 0;
 void loop() {
-  Serial.print(posCur);
-  Serial.print(",");
-  Serial.print(posUpright);
-  Serial.print(",");
-  Serial.println(tSend);
-  if (!lock) {  // prevents motor from changing its torque too often when it is pulling the user upright
-    if (posPrev1 < posCur-5 && posPrev2 < posCur-10 && posCur < posUpright - 2) { // position of motor must be upwards trend and not close to posUpright (not when the user is close to upright)
-      lock = true;
-      tSend = liftTorque;
-    } else {
-      tSend = normalTorque;
+
+  int i = 0; int sum = 0;
+  while (i < 5) {
+    if (rcvGyro()) {
+      i++;
+      sum += yAcc;
     }
-  } else { // delay 50 ms * 10 = 500ms lock time
-    cnt ++;
-    if (cnt == 10) {
-      lock = false;
-      cnt = 0;
-    }
+    delay(10);
   }
-  posPrev2 = posPrev1;
-  posPrev1 = posCur;
-  send(1, tSend, 0, 0, 0, 0);
-  rcv();
-  delay(50);
+  if (sum / 5 < -50) {
+    Serial.println("up");
+    digitalWrite(11, HIGH);
+    motor(1, liftTorque, 0, 0, 0, 0);
+  } else {
+    digitalWrite(11, LOW);
+    motor(1, normalTorque, 0, 0, 0, 0);
+  }
+  // if (rcvGyro()) {
+  //   Serial.print(xAcc);
+  //   Serial.print(",");
+  //   Serial.print(yAcc);
+  //   Serial.print(",");
+  //   Serial.println(zAcc);
+  // }
+  // delay(50);
 }
