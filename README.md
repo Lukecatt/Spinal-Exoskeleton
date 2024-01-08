@@ -1,2 +1,5 @@
 # Spinal-Exoskeleton
-A spinal exoskeleton to do something. Not sure if it will actually be useful yet
+A spinal exoskeleton that lifts the user.
+
+MCU: ESP32S3
+Motor: Unitree GO-M8010-6 
