@@ -1,7 +1,7 @@
 unsigned char motorTXData[17];
 unsigned char gyroRXData[10];
-const float normalTorque = 0.3; // torque that the motor exerts on default
-const float liftTorque = 1.5; // torque that the motor exerts when user is bending back up
+const float normalTorque = 0.15; // torque that the motor exerts on default
+const float liftTorque = 0.8; // torque that the motor exerts when user is bending back up
 bool start = false;
 float xAcc, yAcc, zAcc; // angular acceleration on axes x, y, and z;
 float xAng, yAng, zAng; // angle of x, y and z axes
@@ -192,23 +192,30 @@ void setup() {
 }
 
 void loop() {
+  // motor(1, 0.05, 0, 0, 0, 0);
 
   int i = 0; int sum = 0;
-  while (i < 5) {
+  while (i < 10) {
     if (rcvGyro()) {
       i++;
       sum += yAcc;
     }
-    delay(10);
+    delay(2);
   }
-  if (sum / 5 < -50) {
-    Serial.println("up");
-    digitalWrite(11, HIGH);
-    motor(1, liftTorque, 0, 0, 0, 0);
-  } else {
-    digitalWrite(11, LOW);
-    motor(1, normalTorque, 0, 0, 0, 0);
-  }
+  float result = sum / 10.0;
+  Serial.print(result);
+  Serial.print(" ");
+  Serial.println(yAcc);
+
+
+  // if (sum / 5 < -30) {
+  //   // Serial.println("up");
+  //   digitalWrite(11, HIGH); // light LED
+  //   motor(1, liftTorque, 0, 0, 0, 0); // Lift
+  // } else {
+  //   digitalWrite(11, LOW);
+  //   motor(1, normalTorque, 0, 0, 0, 0); // Don't lift
+  // }
   // if (rcvGyro()) {
   //   Serial.print(xAcc);
   //   Serial.print(",");
